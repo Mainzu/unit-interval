@@ -1,0 +1,17 @@
+[package]
+name = "unit-interval"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Types for working with and constraining values to the unit interval."
+readme = "README.md"
+repository = "https://github.com/Mainzu/unit-interval"
+categories = ["mathematics", "no-std::no-alloc"]
+keywords = ["unit", "interval", "fraction", "mathematics", "number"]
+
+[dependencies]
+num-traits = { version = "0.2", default-features = false }
+
+[features]
+default = ["std"]
+std = ["num-traits/std"]
