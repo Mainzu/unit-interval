@@ -130,14 +130,14 @@ impl<T: Debug> Debug for BoundError<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind {
             BoundErrorKind::LessThanZero => {
-                write!(f, "{:?} compares less than 0", self.val)
+                write!(f, "{:?} compares less than zero", self.val)
             }
             BoundErrorKind::GreaterThanOne => {
-                write!(f, "{:?} compares greater than 1", self.val)
+                write!(f, "{:?} compares greater than one", self.val)
             }
             BoundErrorKind::Neither => write!(
                 f,
-                "{:?} compares neither greater than or equal to 0 nor less than or equal to 1",
+                "{:?} compares neither greater than or equal to zero nor less than or equal to one",
                 self.val
             ),
         }
@@ -146,13 +146,13 @@ impl<T: Debug> Debug for BoundError<T> {
 impl<T: Display> Display for BoundError<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.kind {
-            BoundErrorKind::LessThanZero => write!(f, "{} compares less than 0", self.val),
+            BoundErrorKind::LessThanZero => write!(f, "{} compares less than zero", self.val),
             BoundErrorKind::GreaterThanOne => {
-                write!(f, "{} compares greater than 1", self.val)
+                write!(f, "{} compares greater than one", self.val)
             }
             BoundErrorKind::Neither => write!(
                 f,
-                "{} compares neither greater than or equal to 0 nor less than or equal to 1",
+                "{} compares neither greater than or equal to zero nor less than or equal to one",
                 self.val
             ),
         }
@@ -179,15 +179,15 @@ impl<T: Debug + Display> error::Error for BoundError<T> {}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BoundErrorKind {
-    /// The value is less than both 0 and 1
+    /// The value is less than both zero and one
     ///
     /// When `T::zero() <= val` is false but `val <= T::one()` is true.
     LessThanZero,
-    /// The value is greater than both 0 and 1
+    /// The value is greater than both zero and one
     ///
     /// When `T::zero() <= val` is true but `val <= T::one()` is false.
     GreaterThanOne,
-    /// The value is neither greater than or equal to 0 nor less than or equal to 1
+    /// The value is neither greater than or equal to zero nor less than or equal to one
     ///
     /// When both `T::zero() <= val` and `val <= T::one()` are false.
     ///
@@ -243,7 +243,9 @@ impl<T: Zero + One + PartialOrd> UnitInterval<T> {
             (true, true) => Self(val),
             (true, false) => Self(one),
             (false, true) => Self(zero),
-            (false, false) => panic!("Value must compare greater equal to 0 OR less equal to 1"),
+            (false, false) => {
+                panic!("Value must compare greater equal to zero OR less equal to one")
+            }
         }
     }
     /// Guarantee the number in the closed unit interval, panicking if not.
@@ -590,5 +592,209 @@ impl<T> Borrow<T> for UnitInterval<T> {
     #[inline]
     fn borrow(&self) -> &T {
         self.as_inner()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use core::cmp::Ordering;
+    use core::f64;
+
+    const EPSILON: f64 = 1e-4;
+    macro_rules! assert_float_eq {
+        ($a:expr, $b:expr) => {
+            let left: f64 = $a;
+            let right: f64 = $b;
+            match (left - right).abs().partial_cmp(&EPSILON) {
+                None | Some(Ordering::Greater) => assert_eq!(left, right),
+                _ => {}
+            }
+        };
+    }
+
+    #[test]
+    fn new() {
+        assert_eq!(UnitInterval::new(0.5).into_inner(), 0.5);
+        assert_eq!(UnitInterval::new(0.0).into_inner(), 0.0);
+        assert_eq!(UnitInterval::new(1.0).into_inner(), 1.0);
+    }
+
+    #[test]
+    fn new_negative_zero() {
+        let _ = UnitInterval::new(-0.0);
+    }
+
+    #[test]
+    #[should_panic(expected = "Value must be in the interval [0, 1]: -0.1 compares less than zero")]
+    fn new_panic_less_than_zero() {
+        let _ = UnitInterval::new(-0.1);
+    }
+
+    #[test]
+    #[should_panic(
+        expected = "Value must be in the interval [0, 1]: 1.1 compares greater than one"
+    )]
+    fn new_panic_greater_than_one() {
+        let _ = UnitInterval::new(1.1);
+    }
+
+    #[test]
+    fn new_checked() {
+        assert!(UnitInterval::new_checked(0.5).is_ok());
+        assert!(UnitInterval::new_checked(0.0).is_ok());
+        assert!(UnitInterval::new_checked(1.0).is_ok());
+
+        let err = UnitInterval::new_checked(-0.1).unwrap_err();
+        assert_eq!(err.kind(), BoundErrorKind::LessThanZero);
+        assert_float_eq!(err.value(), -0.1);
+
+        let err = UnitInterval::new_checked(1.1).unwrap_err();
+        assert_eq!(err.kind(), BoundErrorKind::GreaterThanOne);
+        assert_float_eq!(err.value(), 1.1);
+
+        let err = UnitInterval::new_checked(f64::NAN).unwrap_err();
+        assert_eq!(err.kind(), BoundErrorKind::Neither);
+        assert!(err.value().is_nan());
+    }
+
+    #[test]
+    fn new_clamped() {
+        assert_float_eq!(UnitInterval::new_clamped(0.5).into_inner(), 0.5);
+        assert_float_eq!(UnitInterval::new_clamped(-0.1).into_inner(), 0.0);
+        assert_float_eq!(UnitInterval::new_clamped(1.1).into_inner(), 1.0);
+    }
+
+    #[test]
+    fn new_fract() {
+        assert_float_eq!(UnitInterval::new_fract(1.5).into_inner(), 0.5);
+        assert_float_eq!(UnitInterval::new_fract(2.75).into_inner(), 0.75);
+        assert_float_eq!(UnitInterval::new_fract(-1.25).into_inner(), -0.25);
+    }
+
+    #[test]
+    fn as_inner() {
+        let unit = UnitInterval::new(0.5);
+        assert_float_eq!(*unit.as_inner(), 0.5);
+    }
+
+    #[test]
+    fn into_inner() {
+        let unit = UnitInterval::new(0.5);
+        assert_float_eq!(unit.into_inner(), 0.5);
+    }
+
+    #[test]
+    fn zero() {
+        assert_float_eq!(UnitInterval::<f64>::zero().into_inner(), 0.0);
+    }
+
+    #[test]
+    fn one() {
+        assert_float_eq!(UnitInterval::<f64>::one().into_inner(), 1.0);
+    }
+
+    #[test]
+    fn complement() {
+        assert_float_eq!(UnitInterval::new(0.3).complement().into_inner(), 0.7);
+        assert_float_eq!(UnitInterval::new(1.0).complement().into_inner(), 0.0);
+        assert_float_eq!(UnitInterval::new(0.0).complement().into_inner(), 1.0);
+    }
+
+    #[test]
+    fn checked_add() {
+        let a = UnitInterval::new(0.3);
+        let b = UnitInterval::new(0.4);
+        assert_float_eq!(a.checked_add(b).unwrap().into_inner(), 0.7f64);
+
+        let a = UnitInterval::new(0.7);
+        let b = UnitInterval::new(0.4);
+        assert!(a.checked_add(b).is_err());
+    }
+
+    #[test]
+    fn checked_sub() {
+        let a = UnitInterval::new(0.7);
+        let b = UnitInterval::new(0.4);
+        assert_float_eq!(a.checked_sub(b).unwrap().into_inner(), 0.3);
+
+        let a = UnitInterval::new(0.3);
+        let b = UnitInterval::new(0.4);
+        assert!(a.checked_sub(b).is_err());
+    }
+
+    #[test]
+    fn checked_mul() {
+        let a = UnitInterval::new(0.5);
+        let b = UnitInterval::new(0.6);
+        assert_float_eq!(a.checked_mul(b).unwrap().into_inner(), 0.3);
+    }
+
+    #[test]
+    fn checked_div() {
+        let a = UnitInterval::new(0.5);
+        let b = UnitInterval::new(0.25);
+        assert!(a.checked_div(b).is_err());
+
+        let a = UnitInterval::new(0.25);
+        let b = UnitInterval::new(0.5);
+        assert_float_eq!(a.checked_div(b).unwrap().into_inner(), 0.5);
+    }
+
+    #[test]
+    fn clamped_add() {
+        let a = UnitInterval::new(0.7);
+        let b = UnitInterval::new(0.4);
+        assert_float_eq!(a.clamped_add(b).into_inner(), 1.0);
+    }
+
+    #[test]
+    fn clamped_sub() {
+        let a = UnitInterval::new(0.3);
+        let b = UnitInterval::new(0.4);
+        assert_float_eq!(a.clamped_sub(b).into_inner(), 0.0);
+    }
+
+    #[test]
+    fn clamped_mul() {
+        let a = UnitInterval::new(0.5);
+        let b = UnitInterval::new(0.6);
+        assert_float_eq!(a.clamped_mul(b).into_inner(), 0.3);
+    }
+
+    #[test]
+    fn clamped_div() {
+        let a = UnitInterval::new(0.5);
+        let b = UnitInterval::new(0.25);
+        assert_float_eq!(a.clamped_div(b).into_inner(), 1.0);
+    }
+
+    #[test]
+    fn add() {
+        let a = UnitInterval::new(0.3);
+        let b = UnitInterval::new(0.4);
+        assert_float_eq!(a + b, 0.7);
+    }
+
+    #[test]
+    fn sub() {
+        let a = UnitInterval::new(0.7);
+        let b = UnitInterval::new(0.4);
+        assert_float_eq!(a - b, 0.3);
+    }
+
+    #[test]
+    fn mul() {
+        let a = UnitInterval::new(0.5);
+        let b = UnitInterval::new(0.6);
+        assert_float_eq!((a * b).into_inner(), 0.3);
+    }
+
+    #[test]
+    fn div() {
+        let a = UnitInterval::new(0.5);
+        let b = UnitInterval::new(0.25);
+        assert_float_eq!(a / b, 2.0);
     }
 }
